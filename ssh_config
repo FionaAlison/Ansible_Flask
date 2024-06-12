@@ -1,0 +1,28 @@
+Host Bastion
+    Hostname 45.114.123.3
+    User ubuntu
+    IdentityFile ~/.ssh/id_rsa.pub
+
+Host host2
+    Hostname 10.0.1.8
+    User ubuntu
+    IdentityFile ~/.ssh/id_rsa.pub
+    ProxyJump Bastion
+
+Host host3
+    Hostname 10.0.1.22
+    User ubuntu
+    IdentityFile ~/.ssh/id_rsa.pub
+    ProxyJump Bastion
+
+Host host1
+    Hostname 10.0.1.5
+    User ubuntu
+    IdentityFile ~/.ssh/id_rsa.pub
+    ProxyJump Bastion
+
+Host HAproxy
+    Hostname 91.123.203.51
+    User ubuntu
+    IdentityFile ~/.ssh/id_rsa.pub
+
