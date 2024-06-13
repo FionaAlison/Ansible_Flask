@@ -3,19 +3,19 @@ Host Bastion
     User ubuntu
     IdentityFile ~/.ssh/id_rsa.pub
 
-Host host2
+Host devA
     Hostname 10.0.1.8
     User ubuntu
     IdentityFile ~/.ssh/id_rsa.pub
     ProxyJump Bastion
 
-Host host3
+Host devB
     Hostname 10.0.1.22
     User ubuntu
     IdentityFile ~/.ssh/id_rsa.pub
     ProxyJump Bastion
 
-Host host1
+Host devC
     Hostname 10.0.1.5
     User ubuntu
     IdentityFile ~/.ssh/id_rsa.pub

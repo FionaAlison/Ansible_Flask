@@ -1,0 +1,162 @@
+---
+- name: Deploy HAproxy and Flask App
+  hosts: all
+  become: yes
+  vars:
+    flask_app_repo: "https://github.com/patrikarlos/NSO_A2"
+    flask_app_dir: "/opt/NSO_A2"
+    flask_app_file: "application2.py"
+    haproxy_config: "/etc/haproxy/haproxy.cfg"
+
+  tasks:
+
+  - name: Update apt cache
+    apt:
+      update_cache: yes
+    tags: always
+
+  - name: Install required packages
+    apt:
+      name: "{{ item }}"
+      state: present
+    loop:
+      - git
+      - python3
+      - python3-pip
+      - haproxy
+    tags: always
+
+  - name: Clone Flask app repository
+    git:
+      repo: "{{ flask_app_repo }}"
+      dest: "{{ flask_app_dir }}"
+    when: "'webservers' in group_names"
+    tags: flask
+
+  - name: Install Flask
+    pip:
+      name: flask
+      executable: pip3
+    when: "'webservers' in group_names"
+    tags: flask
+
+  - name: Create systemd service for Flask app
+    copy:
+      dest: /etc/systemd/system/flaskapp.service
+      content: |
+        [Unit]
+        Description=Flask App
+        After=network.target
+
+        [Service]
+        User=www-data
+        WorkingDirectory={{ flask_app_dir }}
+        ExecStart=/usr/bin/python3 {{ flask_app_dir }}/{{ flask_app_file }}
+
+        [Install]
+        WantedBy=multi-user.target
+    when: "'webservers' in group_names"
+    tags: flask
+
+  - name: Start and enable Flask app service
+    systemd:
+      name: flaskapp
+      enabled: yes
+      state: started
+    when: "'webservers' in group_names"
+    tags: flask
+
+  - name: Backup original HAproxy config
+    copy:
+      src: "{{ haproxy_config }}"
+      dest: "{{ haproxy_config }}.bak"
+      remote_src: yes
+    when: "'HAproxy' in group_names"
+    tags: haproxy
+
+  - name: Deploy new HAproxy config
+    copy:
+      dest: "{{ haproxy_config }}"
+      content: |
+        global
+          log /dev/log    local0
+          log /dev/log    local1 notice
+          chroot /var/lib/haproxy
+          stats socket /run/haproxy/admin.sock mode 660 level admin
+          stats timeout 30s
+          user haproxy
+          group haproxy
+          daemon
+
+        defaults
+          log     global
+          mode    http
+          option  httplog
+          option  dontlognull
+          timeout connect 5000
+          timeout client  50000
+          timeout server  50000
+          errorfile 400 /etc/haproxy/errors/400.http
+          errorfile 403 /etc/haproxy/errors/403.http
+          errorfile 408 /etc/haproxy/errors/408.http
+          errorfile 500 /etc/haproxy/errors/500.http
+          errorfile 502 /etc/haproxy/errors/502.http
+          errorfile 503 /etc/haproxy/errors/503.http
+          errorfile 504 /etc/haproxy/errors/504.http
+
+        frontend http_front
+          bind *:80
+          stats uri /haproxy?stats
+          default_backend http_back
+
+        backend http_back
+          balance roundrobin
+          server devA 10.0.1.8:5000 check
+          server devB 10.0.1.22:5000 check
+          server devC 10.0.1.5:5000 check
+    when: "'HAproxy' in group_names"
+    tags: haproxy
+
+  - name: Check HAproxy config
+    command: haproxy -c -f "{{ haproxy_config }}"
+    register: haproxy_check
+    failed_when: "'Configuration file is valid' not in haproxy_check.stdout"
+    changed_when: false
+    when: "'HAproxy' in group_names"
+    tags: haproxy
+
+  - name: Restart HAproxy
+    systemd:
+      name: haproxy
+      state: restarted
+    when: "'HAproxy' in group_names and haproxy_check is success"
+    tags: haproxy
+
+  - name: Perform a rudimentary function test
+    block:
+      - name: Test devA response
+        uri:
+          url: http://HAproxy/
+          return_content: yes
+        register: result_devA
+
+      - name: Test devB response
+        uri:
+          url: http://HAproxy/
+          return_content: yes
+        register: result_devB
+
+      - name: Test devC response
+        uri:
+          url: http://HAproxy/
+          return_content: yes
+        register: result_devC
+
+      - name: Assert all servers responded
+        assert:
+          that:
+            - "'devA' in result_devA.content"
+            - "'devB' in result_devB.content"
+            - "'devC' in result_devC.content"
+    when: "'HAproxy' in group_names"
+    tags: haproxy
